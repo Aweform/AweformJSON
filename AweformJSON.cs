@@ -746,7 +746,7 @@ namespace Aweform {
 
 						sb.Append("\\r");
 
-					} else if (c >= 32 || c <= 126) {
+					} else if (c >= 32 && c <= 126) {
 
 						sb.Append(c);
 
