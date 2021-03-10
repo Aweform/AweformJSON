@@ -11,7 +11,7 @@ namespace Aweform {
 	// in memory representation. This "library" is optimally used by just adding 
 	// this single file to your .Net project
 	// NOTE: that this parser has only basic syntax error handling
-	// (c) 2020 - Aweform - https://aweform.com/
+	// (c) 2021 - Aweform - https://aweform.com/
 	////////////////////////////////////////////////////////////////////////////////////
 
 		public static class AweformJSON {
@@ -27,6 +27,7 @@ namespace Aweform {
 				public Char[] Chars;
 				public Int32 Index;
 				public Int32 PeekIndex;
+				public StringBuilder ParseStringStringBuilder;
 			}
 
 			public enum Token {
@@ -334,8 +335,51 @@ namespace Aweform {
 
 				ParseContext parseContext = new ParseContext();
 				parseContext.Chars = json.ToCharArray();
+				parseContext.ParseStringStringBuilder = new StringBuilder();
 				
 				return ParseElement(parseContext);
+			}
+		
+			private static Element ParseElement(ParseContext parseContext) {
+
+				Token nextToken = PeekToken(parseContext);
+
+				if (nextToken == Token.ObjectStart) {
+
+					return ParseObjectElement(parseContext);
+
+				} else if (nextToken == Token.ArrayStart) {
+
+					return ParseArrayElement(parseContext);
+
+				} else if (nextToken == Token.String) {
+
+					parseContext.Index = parseContext.PeekIndex - 1;
+					return new Element(ElementType.String, ParseString(parseContext));
+
+				} else if (nextToken == Token.Number) {
+
+					return ParseNumberElement(parseContext);
+
+				} else if (nextToken == Token.True) {
+
+					parseContext.Index = parseContext.PeekIndex;
+					return new Element(ElementType.Boolean, "true");
+
+				} else if (nextToken == Token.False) {
+
+					parseContext.Index = parseContext.PeekIndex;
+					return new Element(ElementType.Boolean, "false");
+
+				} else if (nextToken == Token.Null) {
+
+					parseContext.Index = parseContext.PeekIndex;
+					return new Element(ElementType.Null, "null");
+
+				} else {
+
+					throw new InvalidSyntaxException("Unexpected token (" + nextToken + ") at char " + parseContext.Index);
+				}
 			}
 
 			private static Element ParseObjectElement(ParseContext parseContext) {
@@ -343,7 +387,8 @@ namespace Aweform {
 				parseContext.Index = parseContext.PeekIndex;
 
 				Element objectElement = new Element(ElementType.Object);
-			
+				objectElement.Elements = new List<Element>();
+
 				while (true) {
 
 					Token nextToken = PeekToken(parseContext);
@@ -360,16 +405,11 @@ namespace Aweform {
 						Element attributeElement = ParseElement(parseContext);
 						attributeElement.Name = attributeName;
 
-						if (objectElement.Elements == null) {
-
-							objectElement.Elements = new List<Element>();
-						}
-
 						objectElement.Elements.Add(attributeElement);
 
 					} else if (nextToken == Token.Comma) {
 
-						if (objectElement.Elements == null) {
+						if (objectElement.Elements.Count == 0) {
 
 							throw new InvalidSyntaxException("Unexpected Comma at the start of an Object at char " + parseContext.Index);
 						}
@@ -426,55 +466,12 @@ namespace Aweform {
 				return arrayElement;
 			}
 
-			private static Element ParseElement(ParseContext parseContext) {
-
-				Token nextToken = PeekToken(parseContext);
-
-				if (nextToken == Token.ObjectStart) {
-
-					return ParseObjectElement(parseContext);
-
-				} else if (nextToken == Token.ArrayStart) {
-
-					return ParseArrayElement(parseContext);
-
-				} else if (nextToken == Token.String) {
-
-					parseContext.Index = parseContext.PeekIndex - 1;
-					return new Element(ElementType.String, ParseString(parseContext));
-
-				} else if (nextToken == Token.Number) {
-
-					return ParseNumberElement(parseContext);
-
-				} else if (nextToken == Token.True) {
-
-					parseContext.Index = parseContext.PeekIndex;
-					return new Element(ElementType.Boolean, "true");
-
-				} else if (nextToken == Token.False) {
-
-					parseContext.Index = parseContext.PeekIndex;
-					return new Element(ElementType.Boolean, "false");
-
-				} else if (nextToken == Token.Null) {
-
-					parseContext.Index = parseContext.PeekIndex;
-					return new Element(ElementType.Null, "null");
-
-				} else {
-
-					throw new InvalidSyntaxException("Unexpected token (" + nextToken + ") at char " + parseContext.Index);
-				}
-			}
-
 			private static String ParseString(ParseContext parseContext) {
-			
-				StringBuilder sb = new StringBuilder();
 
-				SkipWhitespace(parseContext);
+				parseContext.Index = parseContext.PeekIndex; // move to "
 
-				parseContext.Index++; // skip "
+				StringBuilder sb = parseContext.ParseStringStringBuilder;
+				sb.Clear();
 
 				while (true) {
 
@@ -552,6 +549,10 @@ namespace Aweform {
 
 								break;
 							}
+
+						} else {
+
+							throw new InvalidSyntaxException("Invalid escape sequence at char " + parseContext.Index);
 						}
 
 					} else {
@@ -565,7 +566,7 @@ namespace Aweform {
 
 			private static Element ParseNumberElement(ParseContext parseContext) {
 
-				SkipWhitespace(parseContext);
+				parseContext.Index = parseContext.PeekIndex - 1;
 
 				Int32 lastNumberCharacterIndex;
 				String numberCharacters = "0123456789-.eE";
@@ -725,6 +726,18 @@ namespace Aweform {
 
 						sb.Append("\\\\");
 
+					} else if (c == '\b') {
+
+						sb.Append("\\b");
+
+					} else if (c == '\f') {
+
+						sb.Append("\\f");
+
+					} else if (c == '\t') {
+
+						sb.Append("\\t");
+
 					} else if (c == '\n') {
 
 						sb.Append("\\n");
@@ -733,13 +746,13 @@ namespace Aweform {
 
 						sb.Append("\\r");
 
-					} else if (c < 20) {
+					} else if (c >= 32 || c <= 126) {
 
-						sb.Append("\\u" + ((Int32)c).ToString().PadLeft(4, '0'));
+						sb.Append(c);
 
 					} else {
 
-						sb.Append(c);
+						sb.Append("\\u" + Convert.ToString(c, 16).PadLeft(4, '0'));
 					}
 				}
 
